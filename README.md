@@ -1,113 +1,98 @@
-# TODO
-Do i need to set these in environment?
-HSA_ENABLE_SDMA=0 MIOPEN_DEBUG_DISABLE_FIND_DB=1
-MIOPEN_USER_DB_PATH=/tmp/miopen_db
+ROCm Stable Diffusion Toolkit — SD/SDXL Inference + DreamBooth LoRA
+===================================================================
 
-example: HSA_ENABLE_SDMA=0 MIOPEN_DEBUG_DISABLE_FIND_DB=1 MIOPEN_USER_DB_PATH=/tmp/miopen_db
-poetry run python -m src.infer
---model-path stabilityai/stable-diffusion-2-1-base
---prompt "a cinematic portrait of a red-haired woman, soft rim lighting, 85mm lens, f/1.8, volumetric light, detailed skin texture, RAW photo, high dynamic range, subtle film grain"
---negative-prompt "blurry, lowres, jpeg artifacts, overexposed, underexposed, extra fingers, deformed"
---steps 28 --guidance 7.0 --width 768 --height 768
---precision bf16 --seed 42
+Generate images and run DreamBooth training on local models and AMD GPUs.
 
+Description
+-----------
+- Run Stable Diffusion (SD/SDXL) text‑to‑image inference on AMD GPUs (ROCm).
+- Fine‑tune LoRA adapters via DreamBooth using the official Diffusers scripts (SD and SDXL).
+- Auto‑detect SD vs SDXL from the model; use local model folders or Hugging Face IDs.
 
-AI Image Generation (ROCm, DreamBooth/LoRA)
-===========================================
-
-Experiments for local Stable Diffusion (SD/SDXL) inference and DreamBooth fine-tuning on AMD GPUs with ROCm.
-
-Project layout
---------------
-- `src/` — Python modules and scripts
-  - `src/infer.py` — SD/SDXL inference with ROCm
-  - `src/train_dreambooth_wrapper.py` — Wrapper around the official Diffusers DreamBooth LoRA script; downloads the trainer on first run
-  - `src/download_model.py` — Download Hugging Face repos into `models/`
-  - `src/utils/` — Helpers for paths and device/dtype selection
-- `models/` — Base models and fine-tuned checkpoints (tracked via `.gitkeep`)
-- `packages/` — External helper scripts (e.g., downloaded DreamBooth script)
-- `output/` — Images, logs, and checkpoints
-
-Requirements
+Installation
 ------------
-- Linux with AMD GPU (e.g., RX 7900 XTX) and ROCm drivers installed
-- Python 3.12 (managed by Poetry)
-- Internet access for first runs (to download models/scripts), unless you pre-populate `models/`
+1) Prerequisites
+   - Linux with AMD GPU and ROCm drivers
+   - Python 3.12 and Poetry
 
-Setup
------
-1) Install Poetry (see https://python-poetry.org/docs/)
-
-2) Install project dependencies (excluding PyTorch):
+2) Run setup
 ```
-poetry install
+bash scripts/setup.sh
 ```
 
-3) Install PyTorch ROCm builds (pick the ROCm index matching your system, e.g., rocm6.1):
-> **AMD/Nvidia**: the command below is needed to use AMD with the `torch` package. If running Nvidia, install `torch` normally.
+3) Determine your ROCm version
+  - `/opt/rocm/bin/rocminfo | grep Runtime`
+  - `hipconfig --version` (if available)
+
+4) Install ROCm‑enabled PyTorch matching your version
 ```
 poetry run pip install --index-url https://download.pytorch.org/whl/rocm6.1 torch torchvision torchaudio
 ```
-Other indices if needed: `rocm6.0`, `rocm6.2`.
+> Note: Replace `rocm6.1` in above example with your ROCm version (e.g., `rocm6.0`, `rocm6.2`).
 
-4) Verify ROCm Torch sees your GPU:
+5) Verify PyTorch Installation:
 ```
-poetry run python - << 'PY'
-import torch
-print('HIP:', getattr(torch.version, 'hip', None))
-print('CUDA available (True on ROCm builds):', torch.cuda.is_available())
-if torch.cuda.is_available():
-    print('Device:', torch.cuda.get_device_name(0))
-PY
+poetry run python -c "import torch; print(torch.__version__, getattr(torch.version, 'hip', None), torch.cuda.is_available())"
 ```
 
-Download a model
-----------------
-To download a model repo into `models/` (e.g., stable-diffusion-v1-5/stable-diffusion-v1-5):
-```
-poetry run python -m src.download_model stable-diffusion-v1-5/stable-diffusion-v1-5
-```
-This will create a directory like `models/stable-diffusion-v1-5/stable-diffusion-v1-5/` containing model files.
+Usage
+-----
+This toolkit provides three primary actions:
 
-Inference (SD/SDXL)
--------------------
-Run text-to-image generation. You can pass either a local path under `models/` or a Hugging Face repo id.
+1) Download a model snapshot
+```
+poetry run python -m src.download_model stabilityai/stable-diffusion-2-1-base
+```
+
+2) Generate images (inference)
 ```
 poetry run python -m src.infer \
-  --model-path stable-diffusion-v1-5/stable-diffusion-v1-5 \
-  --prompt "a high quality portrait photo of a person in studio lighting" \
-  --disable-safety-checker \
-  --steps 30 --guidance 5.0 --width 1024 --height 1024 \
+  --model-path stabilityai/stable-diffusion-2-1-base \
+  --prompt "a cinematic portrait, dramatic lighting, high detail" \
+  --steps 28 --guidance 7.0 --width 768 --height 768 \
   --num-images 2 \
   --output-dir output/inference
 ```
 
-DreamBooth LoRA training
-------------------------
-The training wrapper downloads and runs the official Diffusers DreamBooth LoRA script. It auto-selects mixed precision (bf16 on ROCm-capable cards).
-
-Example (small test run):
+3) Train a LoRA adapter (DreamBooth)
 ```
 poetry run python -m src.train_dreambooth_wrapper \
-  --model-path stable-diffusion-v1-5/stable-diffusion-v1-5 \
-  --instance-data-dir /path/to/your/person_images \
+  --model-path stabilityai/stable-diffusion-2-1-base \
+  --instance-data-dir /path/to/images \
   --instance-prompt "photo of sks person" \
   --steps 200 \
   --batch-size 1 --grad-accum 4 \
   --output-dir output/dreambooth_run
 ```
-Tips:
-- Use 10–20 curated instance images to sanity-check; increase steps for better results (e.g., 800–2000).
-- The wrapper supports optional prior preservation via `--class-data-dir`, `--class-prompt`, and `--prior-loss-weight`.
-- Outputs (checkpoints, logs) go under `output/dreambooth_run`.
+Notes:
+- For stronger results later: steps 800–1200, learning rate 2e‑5 to 5e‑5, SDXL resolution 1024.
+- The training wrapper auto‑selects the SD or SDXL script based on the model.
 
 Troubleshooting
 ---------------
-- ROCm/PyTorch install: Ensure you used the correct ROCm index URL for your driver stack.
-- HIP not detected: Check ROCm installation and that your user has access to the GPU.
-- Memory errors: Reduce `--width/--height`, steps, or try smaller batch size/gradient accumulation.
-- SD vs SDXL: The inference script auto-detects SDXL when the model id contains `xl`/`sdxl`.
+- PyTorch/ROCm not found in Poetry env:
+  - Install with ROCm wheels: `poetry run pip install --index-url https://download.pytorch.org/whl/rocm6.1 torch torchvision torchaudio`
+  - Re‑run `bash scripts/setup.sh` to re‑probe.
+- Torch shows no HIP version or 0 devices:
+  - Reinstall with ROCm wheels; check AMD drivers/ROCm install.
+  - Try env hints: `HSA_ENABLE_SDMA=0`, `MIOPEN_DEBUG_DISABLE_FIND_DB=1`, `MIOPEN_USER_DB_PATH=/tmp/miopen_db`.
+- Training script not found:
+  - Ensure Diffusers is cloned at `packages/diffusers_repo` (run setup script).
+- Checkpointing‑steps = 0 error:
+  - The wrapper guards this by using a large value; avoid passing 0 if scripting directly.
+- SD vs SDXL selection:
+  - Wrapper detects SDXL via local files (`tokenizer_2`/`text_encoder_2`) or model ID heuristics.
+
+Project layout
+--------------
+- `src/infer.py` — SD/SDXL inference (generate image)
+- `src/train_dreambooth_wrapper.py` — DreamBooth LoRA wrapper (train adapter)
+- `src/download_model.py` — Helper to snapshot HF repos into `models/` (download a model)
+- `src/utils/` — Paths, device/dtype helpers
+- `models/` — Base models and fine‑tuned outputs (gitignored contents)
+- `packages/` — External repos (e.g., `diffusers_repo`, gitignored contents)
+- `output/` — Images, logs, LoRA adapters
 
 License
 -------
-This repository provides glue code and wrappers; follow upstream licenses for models/datasets and the Diffusers training script.
+Follow upstream licenses for models/datasets and the Diffusers training scripts.
