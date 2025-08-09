@@ -15,6 +15,7 @@ from diffusers import AutoPipelineForText2Image, StableDiffusionPipeline, Stable
 from PIL import Image
 
 from .utils.paths import ensure_project_dirs, MODELS_DIR, OUTPUT_DIR
+from .utils.files import next_available_index
 from .utils.devices import pick_device, pick_dtype, set_torch_defaults
 
 
@@ -140,6 +141,9 @@ def run_inference(
 
     outdir.mkdir(parents=True, exist_ok=True)
     saved = []
+    # Determine starting index to avoid overwriting existing files
+    index_width = 4
+    start_idx = next_available_index(outdir, prefix="img_", suffix=".png", width=index_width)
     for i in range(num_images):
         try:
             result = pipe(
@@ -167,7 +171,11 @@ def run_inference(
             else:
                 raise
         image: Image.Image = result.images[0]
-        out_path = outdir / f"img_{i:03d}.png"
+        idx = start_idx + i
+        # Ensure we don't collide if files were added concurrently
+        while (outdir / f"img_{idx:0{index_width}d}.png").exists():
+            idx += 1
+        out_path = outdir / f"img_{idx:0{index_width}d}.png"
         image.save(out_path)
         saved.append(out_path)
     return saved
