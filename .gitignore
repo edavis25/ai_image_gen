@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+
+# Env files
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Project
+output/
+!output/.gitkeep
+models/
+!models/.gitkeep
+packages/
+!packages/.gitkeep
+.cache/
+*.log
+logs/
+
+# Large model binaries, notebooks, etc.
+*.safetensors
+*.ckpt
+*.bin
+*.pt
+.ipynb_checkpoints/
